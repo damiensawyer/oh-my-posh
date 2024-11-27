@@ -1,0 +1,100 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - next
+    paths:
+      - "src/**"
+      - "packages/**"
+      - ".github/workflows/**"
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.changelog.outputs.version }}
+      body: ${{ steps.changelog.outputs.clean_changelog }}
+      tag: ${{ steps.changelog.outputs.tag }}
+      skipped: ${{ steps.changelog.outputs.skipped }}
+    steps:
+      - name: Checkout code 👋
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Create changelog ✍️
+        id: changelog
+        uses: TriPSs/conventional-changelog-action@3c4970b6573374889b897403d2f1278c395ea0df
+        with:
+          github-token: ${{ secrets.github_token }}
+          skip-version-file: "true"
+          output-file: "false"
+          skip-commit: "true"
+          skip-on-empty: "true"
+  artifacts:
+    needs: changelog
+    if: ${{ needs.changelog.outputs.skipped == 'false' }}
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: ${{ github.workspace }}/build
+    steps:
+      - name: Checkout code 👋
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install Go 🗳
+        uses: ./.github/workflows/composite/bootstrap-go
+      - name: Pre Build 😸
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          ./pre.ps1 -Version ${{ needs.changelog.outputs.version }}
+      - name: Run GoReleaser 🚀
+        uses: goreleaser/goreleaser-action@9ed2f89a662bf1735a48bc8557fd212fa902bebf
+        with:
+          distribution: goreleaser
+          version: v2.3.2
+          args: release --clean --skip publish
+          workdir: src
+        env:
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      - name: Post Build 🤐
+        run: |
+          ./post.ps1
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+        with:
+          name: build-artifacts
+          path: |
+            src/dist/posh-*
+            src/dist/themes.*
+            src/dist/checksums.*
+  msi:
+    needs:
+      - changelog
+      - artifacts
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, arm64, x86]
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: ${{ github.workspace }}/packages/msi
+    steps:
+      - name: Checkout code 👋
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+        with:
+          name: build-artifacts
+          path: your/destination/dir
+      - name: Install Wix Toolset 🛠
+        run: dotnet tool install --global wix
+      - name: Build installer 📦
+        id: build
+        env:
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          $version = '${{ needs.changelog.outputs.version }}'.TrimStart("v")
+          ./build.ps1 -Architecture ${{ matrix.arch }}  -Version $version -Sign -Copy

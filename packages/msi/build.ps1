@@ -9,8 +9,8 @@ Param
     [parameter(Mandatory = $false)]
     [string]
     $SDKVersion = "10.0.22621.0",
-    [switch]$Download,
     [switch]$Sign,
+    [switch]$Copy,
     [switch]$Upload
 )
 
@@ -19,17 +19,15 @@ $PSDefaultParameterValues['Out-File:Encoding'] = 'UTF8'
 New-Item -Path "." -Name "dist" -ItemType Directory -ErrorAction SilentlyContinue
 New-Item -Path "." -Name "out" -ItemType Directory -ErrorAction SilentlyContinue
 
-if ($Download) {
-    # download the executable
+if ($Copy) {
     switch ($Architecture) {
         'x86' { $file = "posh-windows-386.exe" }
         'x64' { $file = "posh-windows-amd64.exe" }
         Default { $file = "posh-windows-$Architecture.exe" }
     }
 
-    $name = "oh-my-posh.exe"
-    $url = "https://github.com/jandedobbeleer/oh-my-posh/releases/download/v$Version/$file"
-    Invoke-WebRequest $url -Out "./dist/$($name)"
+    # copy the correct architecture to ./dist
+    Copy-Item -Path "../../src/dist/$file" -Destination "./dist/oh-my-posh.exe"
 }
 
 # variables
