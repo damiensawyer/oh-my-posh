@@ -10,7 +10,8 @@ Param
     [string]
     $SDKVersion = "10.0.22621.0",
     [switch]$Download,
-    [switch]$Sign
+    [switch]$Sign,
+    [switch]$Upload
 )
 
 $PSDefaultParameterValues['Out-File:Encoding'] = 'UTF8'
@@ -35,7 +36,8 @@ if ($Download) {
 $env:VERSION = $Version
 
 # create MSI
-$installer = "./out/install-$Architecture.msi"
+$fileName = "install-$Architecture.msi"
+$installer = "./out/$fileName"
 wix build -arch $Architecture -out $installer .\oh-my-posh.wxs
 
 if ($Sign) {
@@ -55,3 +57,16 @@ if ($Sign) {
 # get hash
 $zipHash = Get-FileHash $installer -Algorithm SHA256
 $zipHash.Hash | Out-File -Encoding 'UTF8' "$installer.sha256"
+
+if (-not $Upload) {
+    exit
+}
+
+az storage blob upload --container-name "v$Version" --file $installer --name $fileName --connection-string $env.CDN_CONNECTIONSTRING
+az storage blob upload --container-name 'latest' --file $installer --name $fileName --overwrite true --connection-string $env.CDN_CONNECTIONSTRING
+
+# create version file
+$versionFile = "version.txt"
+New-Item -Path $versionFile -ItemType File -Value "v$Version"
+az storage blob upload --container-name 'latest' --file $versionFile --name $versionFile --overwrite true --connection-string $env.CDN_CONNECTIONSTRING
+
